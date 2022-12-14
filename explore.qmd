@@ -1,0 +1,56 @@
+---
+title: "Exploration"
+format: gfm
+---
+
+This document is for me to explore different aspects of the data before creating the dashboard. `tidyverse` libraries will be used to assist in exploring the data.
+
+```{r}
+#| message: false
+library(tidyverse)
+```
+
+
+# `README`
+Now BART's data contains a `README` file. This mostly gives an overview of the column names and how they are stored. The columns are:
+
+```{r}
+col_names <- c(
+  "day",
+  "hour",
+  "origin_station",
+  "destination_station",
+  "trip_count"
+)
+```
+
+These are stored to help with reading the data later.
+
+The file also mentions that the names of the different stations are abbreviated and provides the [download link for a spreadsheet](https://www.bart.gov/sites/default/files/docs/Station_Names.xls) giving the corresponding full names. After downloading, I was able to read this into a tibble.
+
+```{r}
+station_tibble <- readxl::read_xls("Station_Names.xls") %>%
+  rename(
+    station_code = `Two-Letter Station Code`,
+    station_name = `Station Name`
+  )
+
+station_tibble
+```
+
+The full `README` can be found [here](http://64.111.127.166/origin-destination/READ%20ME.txt).
+
+# Reading Data
+I decided to preview the most recent data.
+
+```{r}
+#| message: false
+read_csv(
+  "http://64.111.127.166/origin-destination/date-hour-soo-dest-2022.csv.gz",
+  col_names = col_names
+) %>%
+  head()
+```
+
+Now, one issue with this data is that the station abbreviations do not match those given in the spreadsheet.
+
