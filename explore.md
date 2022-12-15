@@ -7,6 +7,9 @@ exploring the data.
 
 ``` r
 library(tidyverse)
+library(tsibble)
+library(fable)
+library(feasts)
 ```
 
 # `README`
@@ -139,19 +142,30 @@ station_tibble <- rides_2022 %>%
 
 # Rides
 
-Rides are visualized over time.
+Now, it might be helpful to store the data into a `tsibble`. These are
+similar to `tibble`s but are indexed by time.
 
 ``` r
-rides_2022 %>%
+BART_tsibble <- rides_2022 %>%
   mutate(
     hour = str_glue("{day} {hour}") %>%
       lubridate::ymd_h(tz = "US/Pacific"),
     .keep = "unused"
   ) %>%
-  group_by(hour) %>%
+  as_tsibble(
+    index = hour,
+    key = c(origin_station, destination_station)
+  ) %>%
+  fill_gaps(trip_count = 0)
+```
+
+Storing the data in a `tsibble` will allow for some more time series
+plots.
+
+``` r
+BART_tsibble %>%
   summarize(trip_count = sum(trip_count)) %>%
-  ggplot(aes(hour, trip_count)) +
-  geom_line() +
+  autoplot(.vars = trip_count) +
   labs(
     title = "Hourly number of BART Rides over Time",
     x = "Hour",
@@ -159,4 +173,24 @@ rides_2022 %>%
   )
 ```
 
-![](explore_files/figure-gfm/unnamed-chunk-7-1.png)
+![](explore_files/figure-gfm/unnamed-chunk-8-1.png)
+
+Here, some seasonal patterns are apparent. A seasonal plot may help.
+Since the data is stored hourly, a weekly plot may help.
+
+``` r
+BART_tsibble %>%
+  summarize(trip_count = sum(trip_count)) %>%
+  gg_season(y = trip_count, period = "week") +
+  labs(
+    title = "Seasonal plot: Total BART Rides per Hour",
+    x = "Hour",
+    y = "Total Rides",
+    color = "Week"
+  )
+```
+
+![](explore_files/figure-gfm/unnamed-chunk-9-1.png)
+
+From this plot, it appears that there is a consistent pattern for
+weekdays, while weekends have their own consistent pattern.
