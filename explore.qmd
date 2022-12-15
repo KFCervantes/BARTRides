@@ -54,3 +54,18 @@ read_csv(
 
 Now, one issue with this data is that the station abbreviations do not match those given in the spreadsheet.
 
+## Matching Abbreviations
+There is a webpage where the longer abbreviations are stored. These are stored for the current abbreviations.
+
+```{r}
+station_tibble <- "https://api.bart.gov/docs/overview/abbrev.aspx" %>%
+  rvest::read_html() %>%
+  rvest::html_table(header = TRUE) %>%
+  pluck(1) %>%
+  rename(
+    station_code = Abbr,
+    station_name = `Station Name`
+  )
+
+station_tibble
+```
