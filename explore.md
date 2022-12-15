@@ -65,11 +65,12 @@ The full `README` can be found
 I decided to preview the most recent data.
 
 ``` r
-read_csv(
+rides_2022 <- read_csv(
   "http://64.111.127.166/origin-destination/date-hour-soo-dest-2022.csv.gz",
   col_names = col_names
-) %>%
-  head()
+)
+
+head(rides_2022)
 ```
 
     # A tibble: 6 × 5
@@ -84,3 +85,78 @@ read_csv(
 
 Now, one issue with this data is that the station abbreviations do not
 match those given in the spreadsheet.
+
+## Matching Abbreviations
+
+There is a webpage where the longer abbreviations are stored. These are
+stored for the current abbreviations.
+
+``` r
+station_tibble <- "https://api.bart.gov/docs/overview/abbrev.aspx" %>%
+  rvest::read_html() %>%
+  rvest::html_table(header = TRUE) %>%
+  pluck(1) %>%
+  rename(
+    station_code = Abbr,
+    station_name = `Station Name`
+  ) %>%
+  mutate(station_code = toupper(station_code))
+
+station_tibble
+```
+
+    # A tibble: 48 × 2
+       station_code station_name                
+       <chr>        <chr>                       
+     1 12TH         12th St. Oakland City Center
+     2 16TH         16th St. Mission (SF)       
+     3 19TH         19th St. Oakland            
+     4 24TH         24th St. Mission (SF)       
+     5 ASHB         Ashby (Berkeley)            
+     6 ANTC         Antioch                     
+     7 BALB         Balboa Park (SF)            
+     8 BAYF         Bay Fair (San Leandro)      
+     9 CAST         Castro Valley               
+    10 CIVC         Civic Center (SF)           
+    # … with 38 more rows
+
+Now this is missing two stations:
+
+-   Milpitas
+
+-   Berryessa / North San José
+
+These are added to the tibble.
+
+``` r
+station_tibble <- rides_2022 %>%
+  distinct(origin_station) %>%
+  rename(station_code = origin_station) %>%
+  anti_join(station_tibble, by = "station_code") %>%
+  mutate(station_name = c("Milpitas", "Berryessa / North San José")) %>%
+  bind_rows(station_tibble)
+```
+
+# Rides
+
+Rides are visualized over time.
+
+``` r
+rides_2022 %>%
+  mutate(
+    hour = str_glue("{day} {hour}") %>%
+      lubridate::ymd_h(tz = "US/Pacific"),
+    .keep = "unused"
+  ) %>%
+  group_by(hour) %>%
+  summarize(trip_count = sum(trip_count)) %>%
+  ggplot(aes(hour, trip_count)) +
+  geom_line() +
+  labs(
+    title = "Hourly number of BART Rides over Time",
+    x = "Hour",
+    y = "Number of Rides"
+  )
+```
+
+![](explore_files/figure-gfm/unnamed-chunk-7-1.png)
