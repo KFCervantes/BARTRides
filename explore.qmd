@@ -3,15 +3,10 @@ title: "Exploration"
 format: gfm
 ---
 
-This document is for me to explore different aspects of the data before creating the dashboard. `tidyverse` libraries will be used to assist in exploring the data.
+This document is for me to explore different aspects of the data before creating the dashboard. `fpp3` libraries will be used to assist in exploring the data.
 
 ```{r}
-#| message: false
-#| warning: false
-library(tidyverse)
-library(tsibble)
-library(fable)
-library(feasts)
+library(fpp3)
 ```
 
 
@@ -49,12 +44,12 @@ I decided to preview the most recent data.
 
 ```{r}
 #| message: false
-rides_2022 <- read_csv(
-  "http://64.111.127.166/origin-destination/date-hour-soo-dest-2022.csv.gz",
+rides_2023 <- readr::read_csv(
+  "http://64.111.127.166/origin-destination/date-hour-soo-dest-2023.csv.gz",
   col_names = col_names
 )
 
-head(rides_2022)
+rides_2023
 ```
 
 Now, one issue with this data is that the station abbreviations do not match those given in the spreadsheet.
@@ -66,7 +61,7 @@ There is a webpage where the longer abbreviations are stored. These are stored f
 station_tibble <- "https://api.bart.gov/docs/overview/abbrev.aspx" %>%
   rvest::read_html() %>%
   rvest::html_table(header = TRUE) %>%
-  pluck(1) %>%
+  purrr::pluck(1) %>%
   rename(
     station_code = Abbr,
     station_name = `Station Name`
@@ -85,36 +80,48 @@ Now this is missing two stations:
 These are added to the tibble.
 
 ```{r}
-station_tibble <- rides_2022 %>%
+station_tibble <- rides_2023 %>%
   distinct(origin_station) %>%
   rename(station_code = origin_station) %>%
   anti_join(station_tibble, by = "station_code") %>%
-  mutate(station_name = c("Milpitas", "Berryessa / North San José")) %>%
+  mutate(station_name = c("Berryessa / North San José", "Milpitas")) %>%
   bind_rows(station_tibble)
+
+station_tibble
 ```
+
+These abreviations are saved in order to be read later.
+
+```{r}
+#| eval: false
+saveRDS(station_tibble, "abbreviations.RDS")
+```
+
 
 # Rides
 Now, it might be helpful to store the data into a `tsibble`. These are similar to `tibble`s but are indexed by time.
 
 ```{r}
-BART_tsibble <- rides_2022 %>%
+BART_tsibble <- rides_2023 %>%
   mutate(
-    hour = str_glue("{day} {hour}") %>%
+    hour = stringr::str_glue("{day} {hour}") %>%
       lubridate::ymd_h(tz = "US/Pacific"),
     .keep = "unused"
   ) %>%
   as_tsibble(
     index = hour,
-    key = c(origin_station, destination_station)
+    key = c("origin_station", "destination_station")
   ) %>%
   fill_gaps(trip_count = 0)
+
+BARTRides <- BART_tsibble %>%
+  summarize(trip_count = sum(trip_count))
 ```
 
 Storing the data in a `tsibble` will allow for some more time series plots.
 
 ```{r}
-BART_tsibble %>%
-  summarize(trip_count = sum(trip_count)) %>%
+BARTRides %>%
   autoplot(.vars = trip_count) +
   labs(
     title = "Hourly number of BART Rides over Time",
@@ -126,8 +133,7 @@ BART_tsibble %>%
 Here, some seasonal patterns are apparent. A seasonal plot may help. Since the data is stored hourly, a weekly plot may help.
 
 ```{r}
-BART_tsibble %>%
-  summarize(trip_count = sum(trip_count)) %>%
+BARTRides %>%
   gg_season(y = trip_count, period = "week") +
   labs(
     title = "Seasonal plot: Total BART Rides per Hour",
@@ -139,4 +145,70 @@ BART_tsibble %>%
 
 From this plot, it appears that there is a consistent pattern for weekdays, while weekends have their own consistent pattern.
 
+# Potential models
+Since the data seems to have some seasonal aspect, models with seasonal components will be used. Since there seems to be two distinct patterns, a seasonal period of an entire week will be used. This season will consist of $7 \cdot 24 = 168$ observations.
 
+```{r}
+BARTRides %>%
+  model(
+    seasonal_naive = SNAIVE(trip_count ~ lag("week")),
+    stl = STL(trip_count ~ season(168))
+  ) %>%
+  accuracy()
+```
+
+Overall, the STL model seems to perform better in more metrics than the seasonal naive model.
+
+To test the accuracy further, the 2023 data is used to test the accuracy of an STL model fit on 2022 data.
+
+```{r}
+training <- readr::read_csv(
+  "http://64.111.127.166/origin-destination/date-hour-soo-dest-2022.csv.gz",
+  col_names = col_names
+) %>%
+  mutate(
+    hour = stringr::str_glue("{day} {hour}") %>%
+      lubridate::ymd_h(tz = "US/Pacific"),
+    .keep = "unused"
+  ) %>%
+  as_tsibble(
+    index = hour,
+    key = c("origin_station", "destination_station")
+  ) %>%
+  summarize(trip_count = sum(trip_count)) %>%
+  fill_gaps(trip_count = 0)
+```
+
+Now when forecasting with an STL model, we have to forecast the seasonally adjusted data using a seasonal naive method.
+
+```{r}
+training %>%
+  model(
+    stl = decomposition_model(
+      STL(trip_count ~ season(168)),
+      SNAIVE(season_adjust)
+    )
+  ) %>%
+  forecast(BARTRides) %>%
+  accuracy(BARTRides)
+```
+
+It is important to note that the STL model seems to have a lower accuracy than the seasonally naive model. Since the seasonally naive model is based on the most recent period, it might be good to look at the autocorrelation to evaluate it.
+
+## Autocorrelation evaluation
+
+```{r}
+BARTRides %>%
+  ACF(trip_count, lag_max = 4 * 168) %>%
+  autoplot() +
+  scale_x_continuous(breaks = 0:16 * 7 * 6) +
+  labs(
+    title = "ACF plot",
+    subtitle = "Over 4 weeks"
+  )
+```
+
+From the ACF plot, it appears that the autocorrelation peaks at lags that are multiples of 168. Since this corresponds to weekly periods, it appears that the seasonally naive model may be fairly accurate in this case.
+
+## Best model
+Since ridership seems to have extremely high autocorrelation using weekly lags, a seasonally naive model with a weekly period appears to be the most appropriate.

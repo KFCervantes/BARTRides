@@ -1,16 +1,41 @@
-Exploration
-================
+# Exploration
 
 This document is for me to explore different aspects of the data before
-creating the dashboard. `tidyverse` libraries will be used to assist in
+creating the dashboard. `fpp3` libraries will be used to assist in
 exploring the data.
 
 ``` r
-library(tidyverse)
-library(tsibble)
-library(fable)
-library(feasts)
+library(fpp3)
 ```
+
+    Warning: package 'fpp3' was built under R version 4.3.1
+
+    ── Attaching packages ────────────────────────────────────────────── fpp3 0.5 ──
+
+    ✔ tibble      3.2.1     ✔ tsibble     1.1.3
+    ✔ dplyr       1.1.2     ✔ tsibbledata 0.4.1
+    ✔ tidyr       1.3.0     ✔ feasts      0.3.1
+    ✔ lubridate   1.9.2     ✔ fable       0.3.3
+    ✔ ggplot2     3.4.2     ✔ fabletools  0.3.3
+
+    Warning: package 'tsibble' was built under R version 4.3.1
+
+    Warning: package 'tsibbledata' was built under R version 4.3.1
+
+    Warning: package 'feasts' was built under R version 4.3.1
+
+    Warning: package 'fabletools' was built under R version 4.3.1
+
+    Warning: package 'fable' was built under R version 4.3.1
+
+    ── Conflicts ───────────────────────────────────────────────── fpp3_conflicts ──
+    ✖ lubridate::date()    masks base::date()
+    ✖ dplyr::filter()      masks stats::filter()
+    ✖ tsibble::intersect() masks base::intersect()
+    ✖ tsibble::interval()  masks lubridate::interval()
+    ✖ dplyr::lag()         masks stats::lag()
+    ✖ tsibble::setdiff()   masks base::setdiff()
+    ✖ tsibble::union()     masks base::union()
 
 # `README`
 
@@ -58,7 +83,7 @@ station_tibble
      8 19           19th Street Oakland              
      9 12           12th Street / Oakland City Center
     10 LM           Lake Merritt                     
-    # … with 40 more rows
+    # ℹ 40 more rows
 
 The full `README` can be found
 [here](http://64.111.127.166/origin-destination/READ%20ME.txt).
@@ -68,23 +93,28 @@ The full `README` can be found
 I decided to preview the most recent data.
 
 ``` r
-rides_2022 <- read_csv(
-  "http://64.111.127.166/origin-destination/date-hour-soo-dest-2022.csv.gz",
+rides_2023 <- readr::read_csv(
+  "http://64.111.127.166/origin-destination/date-hour-soo-dest-2023.csv.gz",
   col_names = col_names
 )
 
-head(rides_2022)
+rides_2023
 ```
 
-    # A tibble: 6 × 5
-      day         hour origin_station destination_station trip_count
-      <date>     <dbl> <chr>          <chr>                    <dbl>
-    1 2022-01-01     0 12TH           12TH                         1
-    2 2022-01-01     0 12TH           16TH                         1
-    3 2022-01-01     0 12TH           24TH                         2
-    4 2022-01-01     0 12TH           ASHB                         1
-    5 2022-01-01     0 12TH           MONT                         1
-    6 2022-01-01     0 12TH           POWL                         2
+    # A tibble: 4,279,646 × 5
+       day         hour origin_station destination_station trip_count
+       <date>     <dbl> <chr>          <chr>                    <dbl>
+     1 2023-01-01     0 12TH           12TH                         1
+     2 2023-01-01     0 12TH           16TH                         1
+     3 2023-01-01     0 12TH           19TH                         2
+     4 2023-01-01     0 12TH           24TH                         3
+     5 2023-01-01     0 12TH           ASHB                         2
+     6 2023-01-01     0 12TH           CONC                         1
+     7 2023-01-01     0 12TH           DBRK                         2
+     8 2023-01-01     0 12TH           DELN                         1
+     9 2023-01-01     0 12TH           EMBR                         1
+    10 2023-01-01     0 12TH           FTVL                         1
+    # ℹ 4,279,636 more rows
 
 Now, one issue with this data is that the station abbreviations do not
 match those given in the spreadsheet.
@@ -98,7 +128,7 @@ stored for the current abbreviations.
 station_tibble <- "https://api.bart.gov/docs/overview/abbrev.aspx" %>%
   rvest::read_html() %>%
   rvest::html_table(header = TRUE) %>%
-  pluck(1) %>%
+  purrr::pluck(1) %>%
   rename(
     station_code = Abbr,
     station_name = `Station Name`
@@ -121,23 +151,46 @@ station_tibble
      8 BAYF         Bay Fair (San Leandro)      
      9 CAST         Castro Valley               
     10 CIVC         Civic Center (SF)           
-    # … with 38 more rows
+    # ℹ 38 more rows
 
 Now this is missing two stations:
 
--   Milpitas
+- Milpitas
 
--   Berryessa / North San José
+- Berryessa / North San José
 
 These are added to the tibble.
 
 ``` r
-station_tibble <- rides_2022 %>%
+station_tibble <- rides_2023 %>%
   distinct(origin_station) %>%
   rename(station_code = origin_station) %>%
   anti_join(station_tibble, by = "station_code") %>%
-  mutate(station_name = c("Milpitas", "Berryessa / North San José")) %>%
+  mutate(station_name = c("Berryessa / North San José", "Milpitas")) %>%
   bind_rows(station_tibble)
+
+station_tibble
+```
+
+    # A tibble: 50 × 2
+       station_code station_name                
+       <chr>        <chr>                       
+     1 BERY         Berryessa / North San José  
+     2 MLPT         Milpitas                    
+     3 12TH         12th St. Oakland City Center
+     4 16TH         16th St. Mission (SF)       
+     5 19TH         19th St. Oakland            
+     6 24TH         24th St. Mission (SF)       
+     7 ASHB         Ashby (Berkeley)            
+     8 ANTC         Antioch                     
+     9 BALB         Balboa Park (SF)            
+    10 BAYF         Bay Fair (San Leandro)      
+    # ℹ 40 more rows
+
+These abreviations are saved in order to be read later.
+
+``` r
+saveRDS(station_tibble, "abbreviations.RDS")
 ```
 
 # Rides
@@ -146,25 +199,27 @@ Now, it might be helpful to store the data into a `tsibble`. These are
 similar to `tibble`s but are indexed by time.
 
 ``` r
-BART_tsibble <- rides_2022 %>%
+BART_tsibble <- rides_2023 %>%
   mutate(
-    hour = str_glue("{day} {hour}") %>%
+    hour = stringr::str_glue("{day} {hour}") %>%
       lubridate::ymd_h(tz = "US/Pacific"),
     .keep = "unused"
   ) %>%
   as_tsibble(
     index = hour,
-    key = c(origin_station, destination_station)
+    key = c("origin_station", "destination_station")
   ) %>%
   fill_gaps(trip_count = 0)
+
+BARTRides <- BART_tsibble %>%
+  summarize(trip_count = sum(trip_count))
 ```
 
 Storing the data in a `tsibble` will allow for some more time series
 plots.
 
 ``` r
-BART_tsibble %>%
-  summarize(trip_count = sum(trip_count)) %>%
+BARTRides %>%
   autoplot(.vars = trip_count) +
   labs(
     title = "Hourly number of BART Rides over Time",
@@ -173,14 +228,13 @@ BART_tsibble %>%
   )
 ```
 
-![](explore_files/figure-gfm/unnamed-chunk-8-1.png)
+![](explore_files/figure-commonmark/unnamed-chunk-9-1.png)
 
 Here, some seasonal patterns are apparent. A seasonal plot may help.
 Since the data is stored hourly, a weekly plot may help.
 
 ``` r
-BART_tsibble %>%
-  summarize(trip_count = sum(trip_count)) %>%
+BARTRides %>%
   gg_season(y = trip_count, period = "week") +
   labs(
     title = "Seasonal plot: Total BART Rides per Hour",
@@ -190,7 +244,114 @@ BART_tsibble %>%
   )
 ```
 
-![](explore_files/figure-gfm/unnamed-chunk-9-1.png)
+![](explore_files/figure-commonmark/unnamed-chunk-10-1.png)
 
 From this plot, it appears that there is a consistent pattern for
 weekdays, while weekends have their own consistent pattern.
+
+# Potential models
+
+Since the data seems to have some seasonal aspect, models with seasonal
+components will be used. Since there seems to be two distinct patterns,
+a seasonal period of an entire week will be used. This season will
+consist of $7 \cdot 24 = 168$ observations.
+
+``` r
+BARTRides %>%
+  model(
+    seasonal_naive = SNAIVE(trip_count ~ lag("week")),
+    stl = STL(trip_count ~ season(168))
+  ) %>%
+  accuracy()
+```
+
+    # A tibble: 2 × 10
+      .model         .type       ME  RMSE   MAE   MPE  MAPE  MASE RMSSE  ACF1
+      <chr>          <chr>    <dbl> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl>
+    1 seasonal_naive Training 87.8  1390.  628.  -Inf   Inf 0.426 0.502 0.747
+    2 stl            Training  4.86  888.  478.   NaN   Inf 0.324 0.321 0.718
+
+Overall, the STL model seems to perform better in more metrics than the
+seasonal naive model.
+
+To test the accuracy further, the 2023 data is used to test the accuracy
+of an STL model fit on 2022 data.
+
+``` r
+training <- readr::read_csv(
+  "http://64.111.127.166/origin-destination/date-hour-soo-dest-2022.csv.gz",
+  col_names = col_names
+) %>%
+  mutate(
+    hour = stringr::str_glue("{day} {hour}") %>%
+      lubridate::ymd_h(tz = "US/Pacific"),
+    .keep = "unused"
+  ) %>%
+  as_tsibble(
+    index = hour,
+    key = c("origin_station", "destination_station")
+  ) %>%
+  summarize(trip_count = sum(trip_count)) %>%
+  fill_gaps(trip_count = 0)
+```
+
+    Rows: 8245370 Columns: 5
+    ── Column specification ────────────────────────────────────────────────────────
+    Delimiter: ","
+    chr  (2): origin_station, destination_station
+    dbl  (2): hour, trip_count
+    date (1): day
+
+    ℹ Use `spec()` to retrieve the full column specification for this data.
+    ℹ Specify the column types or set `show_col_types = FALSE` to quiet this message.
+
+Now when forecasting with an STL model, we have to forecast the
+seasonally adjusted data using a seasonal naive method.
+
+``` r
+training %>%
+  model(
+    stl = decomposition_model(
+      STL(trip_count ~ season(168)),
+      SNAIVE(season_adjust)
+    )
+  ) %>%
+  forecast(BARTRides) %>%
+  accuracy(BARTRides)
+```
+
+    # A tibble: 1 × 10
+      .model .type    ME  RMSE   MAE   MPE  MAPE  MASE RMSSE  ACF1
+      <chr>  <chr> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl> <dbl>
+    1 stl    Test  1778. 3124. 2087.   NaN   Inf   NaN   NaN 0.700
+
+It is important to note that the STL model seems to have a lower
+accuracy than the seasonally naive model. Since the seasonally naive
+model is based on the most recent period, it might be good to look at
+the autocorrelation to evaluate it.
+
+## Autocorrelation evaluation
+
+``` r
+BARTRides %>%
+  ACF(trip_count, lag_max = 4 * 168) %>%
+  autoplot() +
+  scale_x_continuous(breaks = 0:16 * 7 * 6) +
+  labs(
+    title = "ACF plot",
+    subtitle = "Over 4 weeks"
+  )
+```
+
+![](explore_files/figure-commonmark/unnamed-chunk-14-1.png)
+
+From the ACF plot, it appears that the autocorrelation peaks at lags
+that are multiples of 168. Since this corresponds to weekly periods, it
+appears that the seasonally naive model may be fairly accurate in this
+case.
+
+## Best model
+
+Since ridership seems to have extremely high autocorrelation using
+weekly lags, a seasonally naive model with a weekly period appears to be
+the most appropriate.
